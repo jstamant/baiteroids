@@ -6,6 +6,7 @@ const screenWidth = 1280;
 const screenHeight = 720;
 const shipAcceleration = 0.05;
 const asteroidAcceleration = 0.01;
+const asteroidSpawnRate: i32 = 60 * 5;
 const shipTurnRate = 2;
 
 const Ship = struct { pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2 };
@@ -25,7 +26,7 @@ pub fn main() anyerror!void {
     defer entities.deinit(allocator);
 
     try entities.append(allocator, .{ .t = .asteroid, .pos = .{ .x = 0, .y = 0 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } });
-    try entities.append(allocator, .{ .t = .asteroid, .pos = .{ .x = 100, .y = 0 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } });
+    var asteroidSpawnTimer: i32 = asteroidSpawnRate;
     var ship: Ship = .{ .pos = .{ .x = screenWidth / 2, .y = screenHeight / 2 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } };
 
     while (!rl.windowShouldClose()) {
@@ -44,6 +45,13 @@ pub fn main() anyerror!void {
         for (entities.items, 0..) |_, i| {
             entities.items[i].pos = entities.items[i].pos.add(entities.items[i].v);
         }
+
+        // Spawn asteroids
+        if (asteroidSpawnTimer == 0) {
+            try entities.append(allocator, .{ .t = .asteroid, .pos = .{ .x = 0, .y = 0 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } });
+            asteroidSpawnTimer = asteroidSpawnRate;
+        }
+        asteroidSpawnTimer -= 1;
 
         // Draw
         rl.beginDrawing();
