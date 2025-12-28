@@ -8,40 +8,44 @@ const shipAcceleration = 0.05;
 const asteroidAcceleration = 0.01;
 const shipTurnRate = 2;
 
+const Ship = struct { pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2 };
+const Asteroid = struct { pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2 };
+
 pub fn main() anyerror!void {
     rl.initWindow(screenWidth, screenHeight, "Baiteroids!");
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 
-    var pos: rl.Vector2 = .{ .x = screenWidth / 2, .y = screenHeight / 2 };
-    var rot: f32 = 0;
-    var vel: rl.Vector2 = .{ .x = 0.2, .y = 0 };
-
-    var apos: rl.Vector2 = .{ .x = 0, .y = 0 };
-    var avel: rl.Vector2 = .{ .x = 0.2, .y = 0 };
+    var ship: Ship = .{ .pos = .{ .x = screenWidth / 2, .y = screenHeight / 2 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } };
+    // const a: Asteroid = .{ .pos = .{ .x = 0, .y = 0 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } };
+    var asteroids: [1]Asteroid = .{.{ .pos = .{ .x = 0, .y = 0 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } }};
 
     while (!rl.windowShouldClose()) {
         // Input
-        if (rl.isKeyDown(.up)) vel = updateShipVelocity(vel, rot);
-        if (rl.isKeyDown(.left)) rot -= shipTurnRate;
-        if (rl.isKeyDown(.right)) rot += shipTurnRate;
+        if (rl.isKeyDown(.up)) ship.v = updateShipVelocity(ship.v, ship.angle);
+        if (rl.isKeyDown(.left)) ship.angle -= shipTurnRate;
+        if (rl.isKeyDown(.right)) ship.angle += shipTurnRate;
 
-        // Update
-        avel = updateAsteroidVelocity(avel, apos, pos);
-        avel = avel.clampValue(0.0, 2.0);
-        pos = pos.add(vel);
-        apos = apos.add(avel);
+        // Update velocities
+        for (asteroids, 0..) |_, i| {
+            asteroids[i].v = updateAsteroidVelocity(asteroids[i].v, asteroids[i].pos, ship.pos);
+            asteroids[i].v = asteroids[i].v.clampValue(0.0, 2.0);
+        }
+        // Update positions
+        ship.pos = ship.pos.add(ship.v);
+        for (asteroids, 0..) |_, i| {
+            asteroids[i].pos = asteroids[i].pos.add(asteroids[i].v);
+        }
 
         // Draw
         rl.beginDrawing();
         defer rl.endDrawing();
-
         rl.clearBackground(.dark_gray);
-
         rl.drawText("Congrats! You created your first window!", 0, 0, 20, .light_gray);
-
-        drawShip(pos, rot);
-        drawAsteroid(apos);
+        drawShip(ship.pos, ship.angle);
+        for (asteroids, 0..) |_, i| {
+            drawAsteroid(asteroids[i].pos);
+        }
     }
 }
 
