@@ -13,7 +13,8 @@ const Ship = struct { pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2 };
 
 const EntityType = enum { ship, asteroid };
 
-const Entity = struct { t: EntityType, pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2 };
+const Entity = struct { id: u32, t: EntityType, pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2, hit: bool = false };
+var idCounter: u32 = 0;
 
 pub fn main() anyerror!void {
     rl.initWindow(screenWidth, screenHeight, "Baiteroids!");
@@ -25,9 +26,10 @@ pub fn main() anyerror!void {
     var entities = try std.ArrayList(Entity).initCapacity(allocator, 100);
     defer entities.deinit(allocator);
 
-    try entities.append(allocator, .{ .t = .asteroid, .pos = .{ .x = 0, .y = 0 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } });
+    try entities.append(allocator, .{ .id = idCounter, .t = .asteroid, .pos = .{ .x = 0, .y = 0 }, .v = .{ .x = 0.2, .y = 0 } });
+    idCounter += 1;
     var asteroidSpawnTimer: i32 = asteroidSpawnRate;
-    var ship: Ship = .{ .pos = .{ .x = screenWidth / 2, .y = screenHeight / 2 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } };
+    var ship: Ship = .{ .pos = .{ .x = screenWidth / 2, .y = screenHeight / 2 }, .v = .{ .x = 0.2, .y = 0 } };
 
     while (!rl.windowShouldClose()) {
         // Input
@@ -46,9 +48,28 @@ pub fn main() anyerror!void {
             entities.items[i].pos = entities.items[i].pos.add(entities.items[i].v);
         }
 
+        // Check collisions
+        for (entities.items, 0..) |asteroid, i| {
+            // PERF: skip any already hit during this process
+            if (asteroid.hit == true) continue;
+            for (entities.items, 0..) |other, j| {
+                if (asteroid.id == other.id) continue;
+                if (asteroid.pos.distance(other.pos) <= 80) {
+                    entities.items[i].hit = true;
+                    entities.items[j].hit = true;
+                    break;
+                }
+            }
+        }
+        // Remove collided asteroids
+        for (entities.items, 0..) |asteroid, i| {
+            if (asteroid.hit == true) _ = entities.orderedRemove(i);
+        }
+
         // Spawn asteroids
         if (asteroidSpawnTimer == 0) {
-            try entities.append(allocator, .{ .t = .asteroid, .pos = .{ .x = 0, .y = 0 }, .angle = 0, .v = .{ .x = 0.2, .y = 0 } });
+            try entities.append(allocator, .{ .id = idCounter, .t = .asteroid, .pos = .{ .x = 0, .y = 0 }, .v = .{ .x = 0.2, .y = 0 } });
+            idCounter += 1;
             asteroidSpawnTimer = asteroidSpawnRate;
         }
         asteroidSpawnTimer -= 1;
