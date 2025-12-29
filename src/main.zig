@@ -34,6 +34,10 @@ pub fn main() anyerror!void {
     var ship: Ship = .{ .pos = .{ .x = screenWidth / 2, .y = screenHeight / 2 }, .v = .{ .x = 0.2, .y = 0 } };
     var shipHit = false;
 
+    var score: u32 = 0;
+    // var scoreBuffer = allocator.alloc(u8, 10) catch "SCORE ERR";
+    var scoreBuffer: [10:0]u8 = undefined;
+
     while (!rl.windowShouldClose()) {
         // Input
         if (rl.isKeyDown(.up)) ship.v = updateShipVelocity(ship.v, ship.angle);
@@ -66,7 +70,10 @@ pub fn main() anyerror!void {
         }
         // Remove collided asteroids
         for (entities.items, 0..) |asteroid, i| {
-            if (asteroid.hit == true) _ = entities.orderedRemove(i);
+            if (asteroid.hit == true) {
+                _ = entities.orderedRemove(i);
+                score += 1;
+            }
         }
         // Check for collision with ship
         for (entities.items) |asteroid| {
@@ -87,7 +94,15 @@ pub fn main() anyerror!void {
         rl.beginDrawing();
         defer rl.endDrawing();
         rl.clearBackground(.dark_gray);
-        rl.drawText("Congrats! You created your first window!", 0, 0, 20, .light_gray);
+        const formattedScore = std.fmt.bufPrint(&scoreBuffer, "SCORE: {d}", .{score}) catch "SCORE ERR";
+        scoreBuffer[formattedScore.len] = 0;
+        rl.drawText(
+            scoreBuffer[0..formattedScore.len :0],
+            20,
+            20,
+            40,
+            .light_gray,
+        );
         if (shipHit) rl.drawText(
             destroyed,
             (screenWidth / 2) - @divTrunc(rl.measureText(destroyed, 60), 2),
