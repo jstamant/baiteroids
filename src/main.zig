@@ -16,6 +16,8 @@ const EntityType = enum { ship, asteroid };
 const Entity = struct { id: u32, t: EntityType, pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2, hit: bool = false };
 var idCounter: u32 = 0;
 
+const destroyed = "YOU ARE DESTROYED";
+
 pub fn main() anyerror!void {
     rl.initWindow(screenWidth, screenHeight, "Baiteroids!");
     defer rl.closeWindow();
@@ -30,6 +32,7 @@ pub fn main() anyerror!void {
     idCounter += 1;
     var asteroidSpawnTimer: i32 = asteroidSpawnRate;
     var ship: Ship = .{ .pos = .{ .x = screenWidth / 2, .y = screenHeight / 2 }, .v = .{ .x = 0.2, .y = 0 } };
+    var shipHit = false;
 
     while (!rl.windowShouldClose()) {
         // Input
@@ -65,6 +68,12 @@ pub fn main() anyerror!void {
         for (entities.items, 0..) |asteroid, i| {
             if (asteroid.hit == true) _ = entities.orderedRemove(i);
         }
+        // Check for collision with ship
+        for (entities.items) |asteroid| {
+            if (asteroid.pos.distance(ship.pos) <= 45) {
+                shipHit = true;
+            }
+        }
 
         // Spawn asteroids
         if (asteroidSpawnTimer == 0) {
@@ -79,6 +88,13 @@ pub fn main() anyerror!void {
         defer rl.endDrawing();
         rl.clearBackground(.dark_gray);
         rl.drawText("Congrats! You created your first window!", 0, 0, 20, .light_gray);
+        if (shipHit) rl.drawText(
+            destroyed,
+            (screenWidth / 2) - @divTrunc(rl.measureText(destroyed, 60), 2),
+            screenHeight / 2 - 30,
+            60,
+            .light_gray,
+        );
         drawShip(ship.pos, ship.angle);
         for (entities.items, 0..) |_, i| {
             drawAsteroid(entities.items[i].pos);
@@ -93,14 +109,10 @@ fn drawShip(pos: rl.Vector2, rot: f32) void {
     defer rlgl.rlPopMatrix();
     rlgl.rlTranslatef(x, y, 0);
     rlgl.rlRotatef(rot, 0, 0, 1);
-    const p1: rl.Vector2 = .{ .x = -10, .y = -8 };
-    const p2: rl.Vector2 = .{ .x = 10, .y = 0 };
-    const p3: rl.Vector2 = .{ .x = -10, .y = 8 };
-    // not working... but drawTriangleLines works!???
-    // rl.drawTriangle(p1, p2, p3, .white);
+    const p1: rl.Vector2 = .{ .x = -8, .y = -8 };
+    const p2: rl.Vector2 = .{ .x = 12, .y = 0 };
+    const p3: rl.Vector2 = .{ .x = -8, .y = 8 };
     rl.drawTriangleLines(p1, p2, p3, .white);
-    // NOTE for debugging hitbox
-    rl.drawCircleLines(0, 0, 10, .white);
 }
 
 fn drawAsteroid(pos: rl.Vector2) void {
