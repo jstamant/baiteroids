@@ -2,117 +2,185 @@ const std = @import("std");
 const rl = @import("raylib");
 const rlgl = @import("raylib").gl;
 
-const screenWidth = 1280;
-const screenHeight = 720;
+const Game = struct {
+    const Self = @This();
+    state: enum { title, play, end } = .title,
+    score: i32 = 0,
+    spawn_rate: i32 = 60 * 5,
+    spawn_timer: i32 = 60 * 5,
+    next_id: u32 = 0,
+    ship: Ship = .{
+        .pos = .{ .x = WINDOW_WIDTH / 2, .y = WINDOW_HEIGHT / 2 },
+        .v = .{ .x = 0.2, .y = 0 },
+    },
+    asteroids: std.ArrayList(Asteroid),
+    fn restart(self: *Self, gpa: std.mem.Allocator) void {
+        self.state = .play;
+        self.score = 0;
+        self.spawn_rate = SPAWN_RATE;
+        self.spawn_timer = self.spawn_rate;
+        // self.next_id = 0; // don't reset the ids, no point in it, really
+        self.ship = .{
+            .pos = .{ .x = WINDOW_WIDTH / 2, .y = WINDOW_HEIGHT / 2 },
+            .v = .{ .x = 0.2, .y = 0 },
+        };
+        self.asteroids.clearRetainingCapacity();
+        self.addAsteroid(gpa);
+    }
+    fn addAsteroid(self: *Self, gpa: std.mem.Allocator) void {
+        self.asteroids.append(gpa, .{
+            .id = self.next_id,
+            .pos = .{ .x = 0, .y = 0 },
+            .v = .{ .x = 0.2, .y = 0 },
+        }) catch unreachable;
+        self.next_id += 1;
+    }
+};
+
+const WINDOW_WIDTH = 1280;
+const WINDOW_HEIGHT = 720;
+const WINDOW_TITLE = "Baiteroids!";
+const SPAWN_RATE = 60 * 5;
+const foreground = rl.Color.light_gray;
+const background = rl.Color.dark_gray;
 const shipAcceleration = 0.05;
 const asteroidAcceleration = 0.01;
-const asteroidSpawnRate: i32 = 60 * 5;
 const shipTurnRate = 2;
 
-const Ship = struct { pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2 };
+const Ship = struct {
+    pos: rl.Vector2,
+    angle: f32 = 0,
+    v: rl.Vector2 = .{ .x = 0, .y = 0 },
+    hit: bool = false,
+};
 
-const EntityType = enum { ship, asteroid };
+const Asteroid = struct {
+    id: u32,
+    pos: rl.Vector2,
+    angle: f32 = 0,
+    v: rl.Vector2 = .{ .x = 0, .y = 0 },
+    hit: bool = false,
+};
 
-const Entity = struct { id: u32, t: EntityType, pos: rl.Vector2, angle: f32 = 0, v: rl.Vector2, hit: bool = false };
-var idCounter: u32 = 0;
-
+const titleText = "BAITEROIDS\npress enter to play";
 const destroyed = "YOU ARE DESTROYED";
 
-pub fn main() anyerror!void {
-    rl.initWindow(screenWidth, screenHeight, "Baiteroids!");
+pub fn main() !void {
+    rl.initWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE);
     defer rl.closeWindow();
     rl.setTargetFPS(60);
+
+    // TODO use arena allocator or fixed allocator and free memory on each play?
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-
-    var entities = try std.ArrayList(Entity).initCapacity(allocator, 100);
-    defer entities.deinit(allocator);
-
-    try entities.append(allocator, .{ .id = idCounter, .t = .asteroid, .pos = .{ .x = 0, .y = 0 }, .v = .{ .x = 0.2, .y = 0 } });
-    idCounter += 1;
-    var asteroidSpawnTimer: i32 = asteroidSpawnRate;
-    var ship: Ship = .{ .pos = .{ .x = screenWidth / 2, .y = screenHeight / 2 }, .v = .{ .x = 0.2, .y = 0 } };
-    var shipHit = false;
-
-    var score: u32 = 0;
-    // var scoreBuffer = allocator.alloc(u8, 10) catch "SCORE ERR";
     var scoreBuffer: [10:0]u8 = undefined;
 
+    var game = Game{ .asteroids = try std.ArrayList(Asteroid).initCapacity(allocator, 100) };
+    defer game.asteroids.deinit(allocator);
+    game.addAsteroid(allocator);
+
     while (!rl.windowShouldClose()) {
-        // Input
-        if (rl.isKeyDown(.up)) ship.v = updateShipVelocity(ship.v, ship.angle);
-        if (rl.isKeyDown(.left)) ship.angle -= shipTurnRate;
-        if (rl.isKeyDown(.right)) ship.angle += shipTurnRate;
-
-        // Update velocities
-        for (entities.items, 0..) |_, i| {
-            entities.items[i].v = updateAsteroidVelocity(entities.items[i].v, entities.items[i].pos, ship.pos);
-            entities.items[i].v = entities.items[i].v.clampValue(0.0, 2.0);
-        }
-        // Update positions
-        ship.pos = ship.pos.add(ship.v);
-        for (entities.items, 0..) |_, i| {
-            entities.items[i].pos = entities.items[i].pos.add(entities.items[i].v);
-        }
-
-        // Check collisions
-        for (entities.items, 0..) |asteroid, i| {
-            // PERF: skip any already hit during this process
-            if (asteroid.hit == true) continue;
-            for (entities.items, 0..) |other, j| {
-                if (asteroid.id == other.id) continue;
-                if (asteroid.pos.distance(other.pos) <= 80) {
-                    entities.items[i].hit = true;
-                    entities.items[j].hit = true;
-                    break;
-                }
-            }
-        }
-        // Remove collided asteroids
-        for (entities.items, 0..) |asteroid, i| {
-            if (asteroid.hit == true) {
-                _ = entities.orderedRemove(i);
-                score += 1;
-            }
-        }
-        // Check for collision with ship
-        for (entities.items) |asteroid| {
-            if (asteroid.pos.distance(ship.pos) <= 45) {
-                shipHit = true;
-            }
-        }
-
-        // Spawn asteroids
-        if (asteroidSpawnTimer == 0) {
-            try entities.append(allocator, .{ .id = idCounter, .t = .asteroid, .pos = .{ .x = 0, .y = 0 }, .v = .{ .x = 0.2, .y = 0 } });
-            idCounter += 1;
-            asteroidSpawnTimer = asteroidSpawnRate;
-        }
-        asteroidSpawnTimer -= 1;
-
         // Draw
         rl.beginDrawing();
         defer rl.endDrawing();
-        rl.clearBackground(.dark_gray);
-        const formattedScore = std.fmt.bufPrint(&scoreBuffer, "SCORE: {d}", .{score}) catch "SCORE ERR";
-        scoreBuffer[formattedScore.len] = 0;
-        rl.drawText(
-            scoreBuffer[0..formattedScore.len :0],
-            20,
-            20,
-            40,
-            .light_gray,
-        );
-        if (shipHit) rl.drawText(
-            destroyed,
-            (screenWidth / 2) - @divTrunc(rl.measureText(destroyed, 60), 2),
-            screenHeight / 2 - 30,
-            60,
-            .light_gray,
-        );
-        drawShip(ship.pos, ship.angle);
-        for (entities.items, 0..) |_, i| {
-            drawAsteroid(entities.items[i].pos);
+        rl.clearBackground(background);
+
+        if (game.state == .play or game.state == .end) {
+            // Input
+            if (game.state == .play) {
+                if (rl.isKeyDown(.up)) game.ship.v = updateShipVelocity(game.ship.v, game.ship.angle);
+                if (rl.isKeyDown(.left)) game.ship.angle -= shipTurnRate;
+                if (rl.isKeyDown(.right)) game.ship.angle += shipTurnRate;
+            }
+
+            // Update velocities
+            for (game.asteroids.items, 0..) |_, i| {
+                game.asteroids.items[i].v = updateAsteroidVelocity(game.asteroids.items[i].v, game.asteroids.items[i].pos, game.ship.pos);
+                game.asteroids.items[i].v = game.asteroids.items[i].v.clampValue(0.0, 2.0);
+            }
+            // Update positions
+            if (game.state == .play) game.ship.pos = game.ship.pos.add(game.ship.v);
+            for (game.asteroids.items, 0..) |_, i| {
+                game.asteroids.items[i].pos = game.asteroids.items[i].pos.add(game.asteroids.items[i].v);
+            }
+
+            // Check collisions
+            if (game.state == .play) {
+                for (game.asteroids.items, 0..) |asteroid, i| {
+                    // PERF: skip any already hit during this process
+                    if (asteroid.hit == true) continue;
+                    for (game.asteroids.items, 0..) |other, j| {
+                        if (asteroid.id == other.id) continue;
+                        if (asteroid.pos.distance(other.pos) <= 80) {
+                            game.asteroids.items[i].hit = true;
+                            game.asteroids.items[j].hit = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            // Remove collided asteroids
+            for (game.asteroids.items, 0..) |asteroid, i| {
+                if (asteroid.hit == true) {
+                    _ = game.asteroids.orderedRemove(i);
+                    if (game.state == .play) game.score += 1;
+                }
+            }
+            // Check for collision with ship
+            if (game.state == .play) {
+                for (game.asteroids.items) |asteroid| {
+                    if (asteroid.pos.distance(game.ship.pos) <= 45) {
+                        game.ship.hit = true;
+                        game.state = .end;
+                    }
+                }
+            }
+
+            // Spawn asteroids
+            if (game.state == .play) {
+                if (game.spawn_timer == 0) {
+                    game.addAsteroid(allocator);
+                    game.spawn_timer = game.spawn_rate;
+                }
+                game.spawn_timer -= 1;
+            }
+
+            // Draw
+            const formattedScore = std.fmt.bufPrint(&scoreBuffer, "SCORE: {d}", .{game.score}) catch "SCORE ERR";
+            scoreBuffer[formattedScore.len] = 0;
+            rl.drawText(
+                scoreBuffer[0..formattedScore.len :0],
+                20,
+                20,
+                40,
+                foreground,
+            );
+            if (game.state == .play) drawShip(game.ship.pos, game.ship.angle);
+            for (game.asteroids.items, 0..) |_, i| {
+                drawAsteroid(game.asteroids.items[i].pos);
+            }
+        }
+        if (game.state == .title) {
+            if (rl.isKeyDown(.enter)) game.state = .play;
+            rl.drawText(
+                titleText,
+                (WINDOW_WIDTH / 2) - @divTrunc(rl.measureText(titleText, 60), 2),
+                WINDOW_HEIGHT / 2 - 30,
+                60,
+                foreground,
+            );
+        }
+        if (game.state == .end) {
+            if (rl.isKeyDown(.enter)) {
+                game.restart(allocator);
+            }
+            rl.drawText(
+                destroyed,
+                (WINDOW_WIDTH / 2) - @divTrunc(rl.measureText(destroyed, 60), 2),
+                WINDOW_HEIGHT / 2 - 30,
+                60,
+                foreground,
+            );
         }
     }
 }
