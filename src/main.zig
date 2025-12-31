@@ -6,51 +6,47 @@ const Game = struct {
     const Self = @This();
     state: enum { title, play, end } = .title,
     score: i32 = 0,
-    spawn_rate: i32 = 60 * 5,
-    spawn_timer: i32 = 60 * 5,
+    spawn_rate: i32 = SPAWN_RATE,
+    spawn_timer: i32 = SPAWN_RATE,
     next_id: u32 = 0,
     rng: std.Random.DefaultPrng,
-    ship: Ship = .{
-        .pos = .{ .x = WINDOW_WIDTH / 2, .y = WINDOW_HEIGHT / 2 },
-        .v = .{ .x = 0.2, .y = 0 },
-    },
+    ship: Ship = undefined,
+    gpa: std.mem.Allocator,
     asteroids: std.ArrayList(Asteroid),
     pub fn init(gpa: std.mem.Allocator) Game {
         const seed: u64 = @intCast(std.time.timestamp());
         return Game{
-            .state = .title,
-            .score = 0,
-            .spawn_rate = SPAWN_RATE,
-            .spawn_timer = SPAWN_RATE,
-            .next_id = 0,
             .rng = std.Random.DefaultPrng.init(seed),
-            .ship = .{
-                .pos = .{ .x = WINDOW_WIDTH / 2, .y = WINDOW_HEIGHT / 2 },
-                .v = .{ .x = 0.2, .y = 0 },
-            },
+            .gpa = gpa,
             .asteroids = std.ArrayList(Asteroid).initCapacity(gpa, 100) catch unreachable,
         };
     }
-    fn deinit(self: *Self, gpa: std.mem.Allocator) void {
-        self.asteroids.deinit(gpa);
+    fn deinit(self: *Self) void {
+        self.asteroids.deinit(self.gpa);
     }
-    fn restart(self: *Self, gpa: std.mem.Allocator) void {
+    fn restart(self: *Self) void {
         self.state = .play;
         self.score = 0;
         self.spawn_rate = SPAWN_RATE;
         self.spawn_timer = self.spawn_rate;
         // self.next_id = 0; // don't reset the ids, no point in it, really
+        self.resetShip();
+        self.asteroids.clearRetainingCapacity();
+        self.spawnAsteroid();
+    }
+    fn resetShip(self: *Self) void {
+        const angle: f32 = @floatFromInt(self.rng.random().intRangeAtMost(u32, 0, 359));
+        const v = rl.Vector2.init(0.2, 0).rotate(degreesToRadians(angle));
         self.ship = .{
             .pos = .{ .x = WINDOW_WIDTH / 2, .y = WINDOW_HEIGHT / 2 },
-            .v = .{ .x = 0.2, .y = 0 },
+            .angle = angle,
+            .v = v,
         };
-        self.asteroids.clearRetainingCapacity();
-        self.spawnAsteroid(gpa);
     }
-    fn spawnAsteroid(self: *Self, gpa: std.mem.Allocator) void {
+    fn spawnAsteroid(self: *Self) void {
         const x: f32 = if (self.rng.random().boolean()) WINDOW_WIDTH else 0;
         const y: f32 = if (self.rng.random().boolean()) WINDOW_HEIGHT else 0;
-        self.asteroids.append(gpa, .{
+        self.asteroids.append(self.gpa, .{
             .id = self.next_id,
             .pos = .{ .x = x, .y = y },
             .v = .{ .x = 0.2, .y = 0 },
@@ -98,8 +94,7 @@ pub fn main() !void {
     var scoreBuffer: [10:0]u8 = undefined;
 
     var game = Game.init(allocator);
-    defer game.deinit(allocator);
-    game.spawnAsteroid(allocator);
+    defer game.deinit();
 
     while (!rl.windowShouldClose()) {
         // Draw
@@ -161,7 +156,7 @@ pub fn main() !void {
             // Spawn asteroids
             if (game.state == .play) {
                 if (game.spawn_timer == 0) {
-                    game.spawnAsteroid(allocator);
+                    game.spawnAsteroid();
                     game.spawn_timer = game.spawn_rate;
                 }
                 game.spawn_timer -= 1;
@@ -183,7 +178,7 @@ pub fn main() !void {
             }
         }
         if (game.state == .title) {
-            if (rl.isKeyDown(.enter)) game.state = .play;
+            if (rl.isKeyDown(.enter)) game.restart();
             rl.drawText(
                 titleText,
                 (WINDOW_WIDTH / 2) - @divTrunc(rl.measureText(titleText, 60), 2),
@@ -194,7 +189,7 @@ pub fn main() !void {
         }
         if (game.state == .end) {
             if (rl.isKeyDown(.enter)) {
-                game.restart(allocator);
+                game.restart();
             }
             rl.drawText(
                 destroyed,
