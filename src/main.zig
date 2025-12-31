@@ -9,11 +9,31 @@ const Game = struct {
     spawn_rate: i32 = 60 * 5,
     spawn_timer: i32 = 60 * 5,
     next_id: u32 = 0,
+    rng: std.Random.DefaultPrng,
     ship: Ship = .{
         .pos = .{ .x = WINDOW_WIDTH / 2, .y = WINDOW_HEIGHT / 2 },
         .v = .{ .x = 0.2, .y = 0 },
     },
     asteroids: std.ArrayList(Asteroid),
+    pub fn init(gpa: std.mem.Allocator) Game {
+        const seed: u64 = @intCast(std.time.timestamp());
+        return Game{
+            .state = .title,
+            .score = 0,
+            .spawn_rate = SPAWN_RATE,
+            .spawn_timer = SPAWN_RATE,
+            .next_id = 0,
+            .rng = std.Random.DefaultPrng.init(seed),
+            .ship = .{
+                .pos = .{ .x = WINDOW_WIDTH / 2, .y = WINDOW_HEIGHT / 2 },
+                .v = .{ .x = 0.2, .y = 0 },
+            },
+            .asteroids = std.ArrayList(Asteroid).initCapacity(gpa, 100) catch unreachable,
+        };
+    }
+    fn deinit(self: *Self, gpa: std.mem.Allocator) void {
+        self.asteroids.deinit(gpa);
+    }
     fn restart(self: *Self, gpa: std.mem.Allocator) void {
         self.state = .play;
         self.score = 0;
@@ -25,12 +45,14 @@ const Game = struct {
             .v = .{ .x = 0.2, .y = 0 },
         };
         self.asteroids.clearRetainingCapacity();
-        self.addAsteroid(gpa);
+        self.spawnAsteroid(gpa);
     }
-    fn addAsteroid(self: *Self, gpa: std.mem.Allocator) void {
+    fn spawnAsteroid(self: *Self, gpa: std.mem.Allocator) void {
+        const x: f32 = if (self.rng.random().boolean()) WINDOW_WIDTH else 0;
+        const y: f32 = if (self.rng.random().boolean()) WINDOW_HEIGHT else 0;
         self.asteroids.append(gpa, .{
             .id = self.next_id,
-            .pos = .{ .x = 0, .y = 0 },
+            .pos = .{ .x = x, .y = y },
             .v = .{ .x = 0.2, .y = 0 },
         }) catch unreachable;
         self.next_id += 1;
@@ -75,9 +97,9 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     var scoreBuffer: [10:0]u8 = undefined;
 
-    var game = Game{ .asteroids = try std.ArrayList(Asteroid).initCapacity(allocator, 100) };
-    defer game.asteroids.deinit(allocator);
-    game.addAsteroid(allocator);
+    var game = Game.init(allocator);
+    defer game.deinit(allocator);
+    game.spawnAsteroid(allocator);
 
     while (!rl.windowShouldClose()) {
         // Draw
@@ -139,7 +161,7 @@ pub fn main() !void {
             // Spawn asteroids
             if (game.state == .play) {
                 if (game.spawn_timer == 0) {
-                    game.addAsteroid(allocator);
+                    game.spawnAsteroid(allocator);
                     game.spawn_timer = game.spawn_rate;
                 }
                 game.spawn_timer -= 1;
