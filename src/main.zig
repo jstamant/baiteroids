@@ -49,7 +49,6 @@ const Game = struct {
         self.asteroids.append(self.gpa, .{
             .id = self.next_id,
             .pos = .{ .x = x, .y = y },
-            .v = .{ .x = 0.2, .y = 0 },
         }) catch unreachable;
         self.next_id += 1;
     }
@@ -63,7 +62,8 @@ const foreground = rl.Color.light_gray;
 const background = rl.Color.dark_gray;
 const shipAcceleration = 0.05;
 const asteroidAcceleration = 0.01;
-const shipTurnRate = 2;
+const asteroidVelocityMax = 2.00;
+const shipTurnRate = 4;
 
 const Ship = struct {
     pos: rl.Vector2,
@@ -113,7 +113,7 @@ pub fn main() !void {
             // Update velocities
             for (game.asteroids.items, 0..) |_, i| {
                 game.asteroids.items[i].v = updateAsteroidVelocity(game.asteroids.items[i].v, game.asteroids.items[i].pos, game.ship.pos);
-                game.asteroids.items[i].v = game.asteroids.items[i].v.clampValue(0.0, 2.0);
+                game.asteroids.items[i].v = game.asteroids.items[i].v.clampValue(0.0, asteroidVelocityMax);
             }
             // Update positions
             if (game.state == .play) game.ship.pos = game.ship.pos.add(game.ship.v);
@@ -155,7 +155,7 @@ pub fn main() !void {
 
             // Spawn asteroids
             if (game.state == .play) {
-                if (game.spawn_timer == 0) {
+                if (game.spawn_timer <= 0) {
                     game.spawnAsteroid();
                     game.spawn_timer = game.spawn_rate;
                 }
@@ -230,7 +230,10 @@ fn updateShipVelocity(v: rl.Vector2, r: f32) rl.Vector2 {
 }
 
 fn updateAsteroidVelocity(v: rl.Vector2, asteroid: rl.Vector2, ship: rl.Vector2) rl.Vector2 {
-    const moment: rl.Vector2 = ship.subtract(asteroid).normalize().scale(asteroidAcceleration);
+    const moment: rl.Vector2 = ship
+        .subtract(asteroid)
+        .normalize()
+        .scale(asteroidAcceleration);
     return v.add(moment);
 }
 
